@@ -175,7 +175,7 @@ function runYabuLogic(timeline, pxPerMeter) {
     }
   }
 
-  if (peakWristSpeed < 50) return { error: "No throw detected" };
+  if (peakWristSpeed < 50) return { error: "No throw detected. Try throwing faster/closer." };
 
   const releaseData = timeline[releaseIdx];
   const kps = releaseData.kps;
@@ -194,26 +194,51 @@ function runYabuLogic(timeline, pxPerMeter) {
   const releaseTime = (releaseIdx * (1/30)).toFixed(2);
 
   let score = 100;
-  let penalties = [];
-  let feedback = "Excellent throw.";
+  let feedbackItems = [];
 
+  // 1. SEPARATION CHECK
   if (separation < 20) {
     score -= 15;
-    penalties.push("Separation: Low hips/shoulder diff");
-    feedback = "Open your hips first, keep shoulders back longer.";
+    feedbackItems.push({
+      issue: "Low Hip-Shoulder Separation",
+      risk: "Increased strain on the shoulder labrum due to lack of kinetic chain energy transfer.",
+      fix: "Focus on keeping your hips open towards the target while keeping your shoulder closed / back longer. Think 'hips go, then shoulders'."
+    });
   }
 
+  // 2. ELBOW ANGLE CHECK
   if (elbowAngle < 70) {
     score -= 10;
-    penalties.push("Arm Slot: Elbow too tight/collapsed");
-    feedback = "Get the ball up and away from your ear.";
+    feedbackItems.push({
+      issue: "Elbow Collapsing / Too Tight",
+      risk: "High valgus stress on the elbow (UCL injury risk).",
+      fix: "Keep your elbow up and away from your head. Maintain a 'L' shape or wider angle at cocking phase."
+    });
   } else if (elbowAngle > 140) {
     score -= 10;
-    penalties.push("Arm Action: Casting/Straight arm");
+    feedbackItems.push({
+      issue: "Arm Casting / Too Straight",
+      risk: "Shoulder impingement and bicep tendonitis.",
+      fix: "Don't lock your arm out. Keep a slight bend to allow for a whip-like action."
+    });
   }
 
+  // 3. VELOCITY / LEG DRIVE CHECK
   if (wristSpeedMph < 35) {
-    feedback = "Use your legs more to drive power.";
+    feedbackItems.push({
+      issue: "Low Velocity / Poor Leg Drive",
+      risk: "Over-reliance on arm strength can lead to overuse injuries.",
+      fix: "Push harder off your back leg. Power comes from the ground up."
+    });
+  }
+
+  // Default "Good Job" if nothing wrong
+  if (feedbackItems.length === 0) {
+    feedbackItems.push({
+      issue: "None Detected",
+      risk: "Low injury risk based on this analysis.",
+      fix: "Great form! Focus on consistency and spot-target accuracy."
+    });
   }
 
   return {
@@ -222,8 +247,7 @@ function runYabuLogic(timeline, pxPerMeter) {
     sep_at_release: Math.round(separation),
     elbow_at_release: Math.round(elbowAngle),
     release_time: releaseTime,
-    feedback: feedback,
-    penalties: penalties
+    feedback_items: feedbackItems // New structured format
   };
 }
 

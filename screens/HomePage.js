@@ -15,18 +15,20 @@ import * as FileSystem from 'expo-file-system';
 
 // --- CONFIG ---
 // REPLACE WITH YOUR PC'S LOCAL IP
-const SERVER_URL = "http://10.0.0.8:8080/analyze"; 
+const SERVER_URL = "http://10.0.0.8:8080/analyze";
 
 export default function HomePage() {
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [micPerm, requestMicPerm] = useMicrophonePermissions();
   const cameraRef = useRef(null);
   const [facing, setFacing] = useState("back");
-  
+
   // State Machine: 'idle', 'recording', 'processing', 'results'
   const [mode, setMode] = useState("idle");
   const [videoUri, setVideoUri] = useState(null);
   const [report, setReport] = useState(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     if (!camPerm?.granted) requestCamPerm();
@@ -37,15 +39,25 @@ export default function HomePage() {
     if (cameraRef.current) {
       try {
         setMode("recording");
+        setRecordingTime(10);
+
+        // Start Timer
+        timerRef.current = setInterval(() => {
+          setRecordingTime((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+
         // Record for up to 10 seconds or until stop
         const video = await cameraRef.current.recordAsync({
           maxDuration: 10,
           quality: "720p",
         });
+
+        clearInterval(timerRef.current);
         setVideoUri(video.uri);
         uploadAndAnalyze(video.uri);
       } catch (e) {
         console.error(e);
+        clearInterval(timerRef.current);
         setMode("idle");
       }
     }
@@ -54,13 +66,13 @@ export default function HomePage() {
   const stopRecording = () => {
     if (cameraRef.current) {
       cameraRef.current.stopRecording();
-      // state change happens in recordAsync promise resolve
+      clearInterval(timerRef.current);
     }
   };
 
   const uploadAndAnalyze = async (uri) => {
     setMode("processing");
-    
+
     try {
       const formData = new FormData();
       formData.append("video", {
@@ -70,7 +82,7 @@ export default function HomePage() {
       });
 
       // Calibrate height (optional, can be input by user)
-      formData.append("height", "1.80"); 
+      formData.append("height", "1.80");
 
       const response = await fetch(SERVER_URL, {
         method: "POST",
@@ -127,12 +139,20 @@ export default function HomePage() {
           />
         )}
 
+        {/* RECORDING TIMER OVERLAY */}
+        {mode === "recording" && (
+          <View style={styles.timerOverlay}>
+            <View style={styles.recordingDot} />
+            <Text style={styles.timerText}>00:{recordingTime < 10 ? `0${recordingTime}` : recordingTime}</Text>
+          </View>
+        )}
+
         {/* PROCESSING OVERLAY */}
         {mode === "processing" && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#00FFCC" />
             <Text style={styles.loadingText}>Analyzing Biomechanics...</Text>
-            <Text style={styles.subText}>Breaking down frame by frame</Text>
+            <Text style={styles.subText}>Checking Kinetic Chain & Injury Risks</Text>
           </View>
         )}
       </View>
@@ -166,12 +186,25 @@ export default function HomePage() {
             </View>
           </View>
 
-          <View style={styles.coachBox}>
-            <Text style={styles.coachTitle}>AI COACH FEEDBACK</Text>
-            <Text style={styles.coachText}>"{report.feedback}"</Text>
-            
-            {report.penalties.map((p, i) => (
-              <Text key={i} style={styles.penaltyText}>• {p}</Text>
+          <View style={styles.coachContainer}>
+            <Text style={styles.sectionTitle}>BIOMECHANICAL FEEDBACK</Text>
+
+            {report.feedback_items && report.feedback_items.map((item, i) => (
+              <View key={i} style={styles.feedbackCard}>
+                <View style={styles.feedbackHeader}>
+                  <Text style={styles.feedbackIssue}>{item.issue}</Text>
+                </View>
+
+                <View style={styles.feedbackRow}>
+                  <Text style={styles.feedbackLabel}>⚠️ RISK:</Text>
+                  <Text style={styles.feedbackRisk}>{item.risk}</Text>
+                </View>
+
+                <View style={styles.feedbackRow}>
+                  <Text style={styles.feedbackLabel}>✅ FIX:</Text>
+                  <Text style={styles.feedbackFix}>{item.fix}</Text>
+                </View>
+              </View>
             ))}
           </View>
 
@@ -191,7 +224,7 @@ export default function HomePage() {
               <View style={styles.recIcon} />
             </TouchableOpacity>
           ) : null}
-          
+
           {mode === "idle" && (
             <TouchableOpacity style={styles.btnFlip} onPress={() => setFacing(f => f === 'back' ? 'front' : 'back')}>
               <Text style={styles.btnText}>FLIP</Text>
@@ -206,7 +239,7 @@ export default function HomePage() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#111", paddingTop: 40 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  
+
   cameraContainer: { flex: 1, borderRadius: 20, overflow: 'hidden', margin: 10, backgroundColor: '#222' },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#00FFCC', fontSize: 18, fontWeight: 'bold', marginTop: 10 },
@@ -220,22 +253,33 @@ const styles = StyleSheet.create({
   btnFlip: { position: 'absolute', right: 30, backgroundColor: '#333', padding: 10, borderRadius: 8 },
   btnText: { color: '#FFF', fontWeight: 'bold' },
 
+  timerOverlay: { position: 'absolute', top: 20, right: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 8, borderRadius: 20 },
+  recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: 'red', marginRight: 8 },
+  timerText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
+
   resultsPanel: { flex: 1, padding: 20 },
   scoreHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  scoreTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
-  scoreVal: { fontSize: 40, fontWeight: 'bold' },
-  
+  scoreTitle: { color: '#FFF', fontSize: 28, fontWeight: '800', letterSpacing: 1 },
+  scoreVal: { fontSize: 48, fontWeight: 'bold' },
+
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statBox: { width: '48%', backgroundColor: '#222', padding: 15, borderRadius: 10, marginBottom: 10 },
-  label: { color: '#888', fontSize: 12, fontWeight: 'bold' },
-  value: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
-  unit: { fontSize: 14, color: '#666' },
+  statBox: { width: '48%', backgroundColor: '#222', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#333' },
+  label: { color: '#AAA', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  value: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
+  unit: { fontSize: 14, color: '#666', fontWeight: 'normal' },
 
-  coachBox: { marginTop: 10, padding: 15, backgroundColor: '#1A1A1A', borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#00FFCC' },
-  coachTitle: { color: '#00FFCC', fontWeight: 'bold', marginBottom: 5 },
-  coachText: { color: '#FFF', fontSize: 16, fontStyle: 'italic', marginBottom: 10 },
-  penaltyText: { color: '#FF5555', fontSize: 14, marginBottom: 2 },
+  coachContainer: { marginTop: 10 },
+  sectionTitle: { color: '#00FFCC', fontSize: 14, fontWeight: 'bold', marginBottom: 10, letterSpacing: 1.2 },
 
-  btnReset: { backgroundColor: '#00FFCC', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 30, marginBottom: 50 },
-  btnTextBlack: { color: '#000', fontWeight: 'bold', fontSize: 16 }
+  feedbackCard: { backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#FF5555' },
+  feedbackHeader: { marginBottom: 8 },
+  feedbackIssue: { color: '#FF5555', fontSize: 18, fontWeight: 'bold' },
+
+  feedbackRow: { marginTop: 8 },
+  feedbackLabel: { color: '#888', fontSize: 12, fontWeight: 'bold', marginBottom: 2 },
+  feedbackRisk: { color: '#CCC', fontSize: 14, fontStyle: 'italic' },
+  feedbackFix: { color: '#FFF', fontSize: 15, fontWeight: '500' },
+
+  btnReset: { backgroundColor: '#00FFCC', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 20, marginBottom: 50, shadowColor: '#00FFCC', shadowOpacity: 0.3, shadowRadius: 10 },
+  btnTextBlack: { color: '#000', fontWeight: 'bold', fontSize: 16, letterSpacing: 0.5 }
 });
